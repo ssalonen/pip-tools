@@ -208,8 +208,10 @@ class PackageManager(BasePackageManager):
     dep_cache_file = os.path.join(piptools_root, 'dependencies.pickle')
     download_cache_root = os.path.join(piptools_root, 'cache')
 
-    def __init__(self, extra_index_urls=[], find_links=[]):
+    def __init__(self, default_index=None, extra_index_urls=[], find_links=[]):
         # TODO: provide options for pip, such as index URL or use-mirrors
+        if default_index is None:
+            default_index = 'https://pypi.python.org/simple/'
         if not os.path.exists(self.download_cache_root):
             os.makedirs(self.download_cache_root)
         self._link_cache = {}
@@ -217,7 +219,9 @@ class PackageManager(BasePackageManager):
         self._dep_call_cache = {}
         self._best_match_call_cache = {}
         self._find_links = find_links[:]
-        self._index_urls = ['https://pypi.python.org/simple/']
+        self._index_urls = []
+        if default_index:
+            self._index_urls.append(default_index)
         self._index_urls.extend(extra_index_urls)
         self._extra_index_urls = extra_index_urls
         try:
@@ -522,6 +526,22 @@ class PackageManager(BasePackageManager):
                     shutil.rmtree(build_dir)
         logger.debug('Found: %s' % (deps,))
         return deps
+
+
+
+class PinnedPackageManager(BasePackageManager):
+
+    def __init__(self, pinned_contents, default_index=None, extra_index_urls=[], find_links=[]):
+        self.real_manager = PackageManager(default_index, extra_index_urls=extra_index_urls, find_links=find_links)
+        self.proxy_manager = FakePackageManager(pinned_contents)
+
+    def find_best_match(self, spec):
+        return self.real_manager.find_best_match(spec)
+
+    def get_dependencies(self, pinned_spec):
+        return self.proxy_manager.get_dependencies(pinned_spec)
+
+
 
 
 if __name__ == '__main__':
