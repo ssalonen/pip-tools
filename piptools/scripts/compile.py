@@ -258,13 +258,6 @@ def cli(verbose, dry_run, include_sources, find_links, extra_index_url, files):
 def cli_pinned(verbose, dry_run, include_sources, find_links, index_url, extra_index_url, files):
     """Compiles requirements.txt from requirements.in specs."""
     setup_logging(verbose)
-    DEFAULT_REQUIREMENTS_FILE = 'requirements.in'
-    GLOB_PATTERN = '*requirements.in'
-
-
-    # Track external PyPi repos referenced
-    extra_index_urls = []
-    extra_find_links = []
 
     if find_links:
         extra_find_links.extend(find_links)
