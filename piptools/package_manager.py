@@ -27,7 +27,7 @@ from pip.vcs import vcs
 
 
 from .logging import logger
-from .datastructures import Spec, first
+from .datastructures import Spec, SpecSet, first
 from .version import NormalizedVersion  # PEP386 compatible version numbers
 
 
@@ -208,10 +208,10 @@ class PackageManager(BasePackageManager):
     dep_cache_file = os.path.join(piptools_root, 'dependencies.pickle')
     download_cache_root = os.path.join(piptools_root, 'cache')
 
-    def __init__(self, default_index=None, extra_index_urls=[], find_links=[]):
+    def __init__(self, index_url=None, extra_index_urls=[], find_links=[], allow_all_prereleases=False):
         # TODO: provide options for pip, such as index URL or use-mirrors
-        if default_index is None:
-            default_index = 'https://pypi.python.org/simple/'
+        if index_url is None:
+            index_url = 'https://pypi.python.org/simple/'
         if not os.path.exists(self.download_cache_root):
             os.makedirs(self.download_cache_root)
         self._link_cache = {}
@@ -219,9 +219,10 @@ class PackageManager(BasePackageManager):
         self._dep_call_cache = {}
         self._best_match_call_cache = {}
         self._find_links = find_links[:]
+        self._allow_all_prereleases = allow_all_prereleases
         self._index_urls = []
-        if default_index:
-            self._index_urls.append(default_index)
+        if index_url:
+            self._index_urls.append(index_url)
         self._index_urls.extend(extra_index_urls)
         self._extra_index_urls = extra_index_urls
         try:
@@ -282,6 +283,7 @@ class PackageManager(BasePackageManager):
                     index_urls=self._index_urls,
                     allow_all_external=True,
                     session=self._session,
+                    allow_all_prereleases=self._allow_all_prereleases
                     # this parameter down not supported anymore
                     # all insecure package should be enumerated
                     # allow_all_insecure=True,
@@ -531,15 +533,31 @@ class PackageManager(BasePackageManager):
 
 class PinnedPackageManager(BasePackageManager):
 
-    def __init__(self, pinned_contents, default_index=None, extra_index_urls=[], find_links=[]):
-        self.real_manager = PackageManager(default_index, extra_index_urls=extra_index_urls, find_links=find_links)
-        self.proxy_manager = FakePackageManager(pinned_contents)
+    def __init__(self, pinned_contents, index_url=None, extra_index_urls=[], find_links=[], allow_all_prereleases=False):
+        self.real_manager = PackageManager(index_url, extra_index_urls=extra_index_urls, find_links=find_links, allow_all_prereleases=allow_all_prereleases)
+        #self.pin_manager = FakePackageManager(pinned_contents)
+        self.pins = pinned_contents
 
     def find_best_match(self, spec):
-        return self.real_manager.find_best_match(spec)
+        #pinned_version = self.pin_manager.find_best_match(spec)
+        pinned_version = self.pins[spec.name]
+        # Let's make sure the pinned version can be found
+        # This also caches the url for the package
+        pinned_spec = spec.pin(pinned_version)
+        
+        # Make sure that pin does not conflict with the original req.
+        specs = SpecSet()
+        specs.add_specs([spec, pinned_spec])
+        # Raises exception on conflicts
+        # FIXME: unsupported versions crash (e.g. pytz 2011k)
+        #specs.normalize()
+
+        return self.real_manager.find_best_match(pinned_spec)
 
     def get_dependencies(self, pinned_spec):
-        return self.proxy_manager.get_dependencies(pinned_spec)
+        # find_best_match must be called before get_dependencies in the current implementation,
+        # the implementation assumes that we have the cached the url already..
+        return self.real_manager.get_dependencies(pinned_spec)
 
 
 

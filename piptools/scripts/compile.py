@@ -83,7 +83,7 @@ def collect_source_specs(filenames):
             yield spec
 
 
-def compile_specs(source_files, include_sources=False, dry_run=False):
+def compile_specs(package_manager, source_files, include_sources=False, dry_run=False):
     logger.debug('===> Collecting source requirements')
     top_level_specs = list(collect_source_specs(source_files))
 
@@ -95,8 +95,6 @@ def compile_specs(source_files, include_sources=False, dry_run=False):
     logger.debug('===> Normalizing source requirements')
     spec_set = spec_set.normalize()
     logger.debug('%s' % (spec_set,))
-
-    package_manager = PackageManager(extra_index_urls, extra_find_links)
 
     logger.debug('')
     logger.debug('===> Resolving full tree')
@@ -148,69 +146,13 @@ def compile_specs(source_files, include_sources=False, dry_run=False):
 
 
 
+def compile_specs_with_default_package_manager(source_files, include_sources=False, dry_run=False, index_url=None, allow_all_prereleases=False):
+    package_manager = PackageManager(extra_index_urls, extra_find_links, allow_all_prereleases=allow_all_prereleases)
+    compile_specs(package_manager, source_files, include_sources=include_sources, dry_run=dry_run)
 
-def compile_pinned_specs(pinned_contents, source_files, include_sources=False, dry_run=False, index_url=None):
-    logger.debug('===> Collecting source requirements')
-    top_level_specs = list(collect_source_specs(source_files))
-
-    spec_set = SpecSet()
-    spec_set.add_specs(top_level_specs)
-    logger.debug('%s' % (spec_set,))
-
-    logger.debug('')
-    logger.debug('===> Normalizing source requirements')
-    spec_set = spec_set.normalize()
-    logger.debug('%s' % (spec_set,))
-
-    package_manager = PinnedPackageManager(pinned_contents, index_url, extra_index_urls, extra_find_links)
-
-    logger.debug('')
-    logger.debug('===> Resolving full tree')
-
-    resolver = Resolver(spec_set, package_manager=package_manager)
-    try:
-        pinned_spec_set = resolver.resolve()
-    except ConflictError as e:
-        logger.error('error: {0}'.format(e))
-        sys.exit(1)
-
-    logger.debug('')
-    logger.debug('===> Pinned spec set resolved')
-    for spec in pinned_spec_set:
-        logger.debug('- %s' % (spec,))
-
-    if dry_run:
-        return
-
-    logger.debug('')
-    logger.debug('===> Writing compiled files')
-
-    # The spec set is global for all files passed to pip-compile. Here we go
-    # through the resolver again (which will use its cache from the initial
-    # run) to determine where to write each dependency.
-    split = defaultdict(SpecSet)
-    for spec in top_level_specs:
-        split[spec.source.split(':')[0]].add_spec(spec)
-
-    for source_file, spec_set in split.items():
-        resolver = Resolver(spec_set, package_manager=package_manager)
-        with logger.silent():
-            local_pinned = resolver.resolve()
-        name, ext = os.path.splitext(source_file)
-        compiled_file = '{0}.txt'.format(name)
-        assert source_file != compiled_file, "Can't overwrite %s" % source_file
-        logger.debug('{0} -> {1}'.format(source_file, compiled_file))
-        with open(compiled_file, 'wb') as f:
-            for spec in sorted(local_pinned, key=text_type):
-                f.write(text_type(spec).encode('utf-8'))
-                if include_sources:
-                    f.write(b'  # {}'.format(spec.source))
-                f.write(b'\n')
-
-            # Include external PyPi sources
-            if len(extra_index_urls):
-                for extra_index_url in extra_index_urls:
-                    f.write(b'--extra-index-url {0}\n'.format(extra_index_url))
+def compile_specs_with_pinned_package_manager(pinned_definition, source_files, include_sources=False, dry_run=False, index_url=None, allow_all_prereleases=False):
+    package_manager = PinnedPackageManager(pinned_definition, index_url, extra_index_urls, extra_find_links, allow_all_prereleases=allow_all_prereleases)
+    compile_specs(package_manager, source_files, include_sources=include_sources, dry_run=dry_run)
 
 
 @click.command()
@@ -237,7 +179,7 @@ def cli(verbose, dry_run, include_sources, find_links, extra_index_url, files):
         click.echo('No input files to process.')
         sys.exit(2)
 
-    compile_specs(src_files, include_sources=include_sources, dry_run=dry_run)
+    compile_specs_with_default_package_manager(src_files, include_sources=include_sources, dry_run=dry_run)
 
     if dry_run:
         logger.info('Dry-run, so nothing updated.')
@@ -254,8 +196,9 @@ def cli(verbose, dry_run, include_sources, find_links, extra_index_url, files):
 @click.option('--find-links', '-f', help="Look for archives in this directory or on this HTML page", multiple=True)
 @click.option('--index-url', default='https://pypi.python.org/simple/', help="Add additional PyPi repo to search")
 @click.option('--extra-index-url', default=None, help="Add additional PyPi repo to search")
+@click.option('--pre', is_flag=True, help="Allow pre-releases")
 @click.argument('files', nargs=-1, type=click.Path(exists=True))
-def cli_pinned(verbose, dry_run, include_sources, find_links, index_url, extra_index_url, files):
+def cli_pinned(verbose, dry_run, include_sources, find_links, index_url, extra_index_url, pre, files):
     """Compiles requirements.txt from requirements.in specs."""
     setup_logging(verbose)
 
@@ -266,13 +209,15 @@ def cli_pinned(verbose, dry_run, include_sources, find_links, index_url, extra_i
         urls = extra_index_url.split(',')
         extra_index_urls.extend(urls)
 
+    pinned_file = files[0]
+    files = files[1:]
+
     src_files = files or glob.glob(GLOB_PATTERN)
     if not src_files:
         click.echo('No input files to process.')
         sys.exit(2)
 
-    pinned_file = files[0]
-    files = files[1:]
+    
     pinned_definition = {}
     with open(pinned_file) as f:
         for line in f:
@@ -285,9 +230,10 @@ def cli_pinned(verbose, dry_run, include_sources, find_links, index_url, extra_i
             pkg = pkg.strip()
             ver = ver.strip()
             pin_key = '-'.join([pkg, ver])
-            pinned_definition[pin_key] = []
+            #pinned_definition[pin_key] = []
+            pinned_definition[pkg] = ver
 
-    compile_pinned_specs(pinned_definition, src_files, include_sources=include_sources, dry_run=dry_run, index_url=index_url)
+    compile_specs_with_pinned_package_manager(pinned_definition, src_files, include_sources=include_sources, dry_run=dry_run, index_url=index_url, allow_all_prereleases=pre)
 
     if dry_run:
         logger.info('Dry-run, so nothing updated.')
