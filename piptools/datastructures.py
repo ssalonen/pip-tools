@@ -78,7 +78,7 @@ def _parse_vcs_url(line):
 ^
 ((?P<editable>-e)[ ]+)?      # checking if editable
 (?P<url>[a-z]+\+[a-z]+://.+?) # extracting main URL
-(?:@(?P<branch>[^#]+))?       # extracting branch if any
+(?:@(?P<branch>[^#/]+))?       # extracting branch if any
 (?:\#egg=(?P<name>.+))?        # extracting egg name
 $
 """
