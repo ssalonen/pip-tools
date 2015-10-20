@@ -165,10 +165,13 @@ def compile_specs(package_manager, source_files, include_sources=False,
 def compile_specs_with_default_package_manager(source_files,
                                                include_sources=False,
                                                dry_run=False, index_url=None,
-                                               allow_all_prereleases=False):
-    package_manager = PackageManager(extra_index_urls=extra_index_urls,
+                                               allow_all_prereleases=False,
+                                               trusted_hosts=None):
+    package_manager = PackageManager(index_url=index_url,
+                                     extra_index_urls=extra_index_urls,
                                      find_links=extra_find_links,
-                                     allow_all_prereleases=allow_all_prereleases)
+                                     allow_all_prereleases=allow_all_prereleases,
+                                     trusted_hosts=trusted_hosts)
     compile_specs(package_manager, source_files,
                   include_sources=include_sources, dry_run=dry_run)
 
@@ -176,10 +179,12 @@ def compile_specs_with_default_package_manager(source_files,
 def compile_specs_with_pinned_package_manager(pinned_definition, source_files,
                                               include_sources=False,
                                               dry_run=False, index_url=None,
-                                              allow_all_prereleases=False):
+                                              allow_all_prereleases=False,
+                                              trusted_hosts=None):
     package_manager = PinnedPackageManager(
         pinned_definition, index_url, extra_index_urls, extra_find_links,
-        allow_all_prereleases=allow_all_prereleases)
+        allow_all_prereleases=allow_all_prereleases,
+        trusted_hosts=trusted_hosts)
     compile_specs(package_manager, source_files,
                   include_sources=include_sources, dry_run=dry_run)
 
@@ -198,9 +203,12 @@ def compile_specs_with_pinned_package_manager(pinned_definition, source_files,
 @click.option('--pre', is_flag=True, help="Allow pre-releases")
 @click.option('--extra-index-url', default=None,
               help="Add additional PyPi repo to search")
+@click.option('--trusted-host', default=None,
+              help="Mark this host as trusted, even though it does not have valid or any HTTPS.",
+              multiple=True)
 @click.argument('files', nargs=-1, type=click.Path(exists=True))
 def cli(verbose, dry_run, include_sources, find_links, index_url, pre,
-        extra_index_url, files):
+        extra_index_url, trusted_host, files):
     """Compiles requirements.txt from requirements.in specs."""
     setup_logging(verbose)
 
@@ -220,7 +228,8 @@ def cli(verbose, dry_run, include_sources, find_links, index_url, pre,
                                                include_sources=include_sources,
                                                dry_run=dry_run,
                                                index_url=index_url,
-                                               allow_all_prereleases=pre)
+                                               allow_all_prereleases=pre,
+                                               trusted_hosts=trusted_host)
 
     if dry_run:
         logger.info('Dry-run, so nothing updated.')
@@ -241,11 +250,14 @@ def cli(verbose, dry_run, include_sources, find_links, index_url, pre,
               help="Index to use")
 @click.option('--extra-index-url', default=None,
               help="Add additional PyPi repo to search")
+@click.option('--trusted-host', default=None,
+              help="Mark this host as trusted, even though it does not have valid or any HTTPS.",
+              multiple=True)
 @click.option('--pre', is_flag=True, help="Allow pre-releases")
 @click.option('--pin-file', required=True, multiple=True)
 @click.argument('files', nargs=-1, type=click.Path(exists=True))
 def cli_pinned(verbose, dry_run, include_sources, find_links, index_url,
-               extra_index_url, pre, pin_file, files):
+               extra_index_url, trusted_host, pre, pin_file, files):
     """Compiles requirements.txt from requirements.in specs."""
     setup_logging(verbose)
     pin_files = pin_file
@@ -269,7 +281,7 @@ def cli_pinned(verbose, dry_run, include_sources, find_links, index_url,
     pinned_specs.add_specs(collect_source_specs(pin_files))
 
     try:
-        pinned_specs.normalize()
+        pinned_specs = pinned_specs.normalize()
     except ConflictError as e:
         raise click.ClickException('Conflict with the pin-file: {}'.format(e))
     pinned_definition = {req.name: req for req in pinned_specs}
@@ -278,7 +290,8 @@ def cli_pinned(verbose, dry_run, include_sources, find_links, index_url,
                                               include_sources=include_sources,
                                               dry_run=dry_run,
                                               index_url=index_url,
-                                              allow_all_prereleases=pre)
+                                              allow_all_prereleases=pre,
+                                              trusted_hosts=trusted_host)
 
     if dry_run:
         logger.info('Dry-run, so nothing updated.')

@@ -235,7 +235,7 @@ class PackageManager(BasePackageManager):
     download_cache_root = os.path.join(piptools_root, 'cache')
 
     def __init__(self, index_url=None, extra_index_urls=[], find_links=[],
-                 allow_all_prereleases=False):
+                 allow_all_prereleases=False, trusted_hosts=None):
         # TODO: provide options for pip, such as index URL or use-mirrors
         if index_url is None:
             index_url = 'https://pypi.python.org/simple/'
@@ -252,6 +252,7 @@ class PackageManager(BasePackageManager):
             self._index_urls.append(index_url)
         self._index_urls.extend(extra_index_urls)
         self._extra_index_urls = extra_index_urls
+        self._trusted_hosts = trusted_hosts
         try:
             # Try to pass/set retries with pip 1.6 (default: 0).
             self._session = PipSession(retries=3)
@@ -310,7 +311,8 @@ class PackageManager(BasePackageManager):
                     index_urls=self._index_urls,
                     allow_all_external=True,
                     session=self._session,
-                    allow_all_prereleases=self._allow_all_prereleases
+                    allow_all_prereleases=self._allow_all_prereleases,
+                    trusted_hosts=self._trusted_hosts,
                     # this parameter down not supported anymore
                     # all insecure package should be enumerated
                     # allow_all_insecure=True,
@@ -565,11 +567,13 @@ class PackageManager(BasePackageManager):
 
 class PinnedPackageManager(BasePackageManager):
     def __init__(self, pinned_contents, index_url=None, extra_index_urls=[],
-                 find_links=[], allow_all_prereleases=False):
+                 find_links=[], allow_all_prereleases=False,
+                 trusted_hosts=None):
         self.real_manager = PackageManager(index_url,
                                            extra_index_urls=extra_index_urls,
                                            find_links=find_links,
-                                           allow_all_prereleases=allow_all_prereleases)
+                                           allow_all_prereleases=allow_all_prereleases,
+                                           trusted_hosts=trusted_hosts)
         # self.pin_manager = FakePackageManager(pinned_contents)
         self.pins = pinned_contents
 
