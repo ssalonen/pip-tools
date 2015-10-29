@@ -3,6 +3,7 @@ import re
 from collections import defaultdict
 from functools import cmp_to_key, partial, wraps
 from itertools import chain
+from pkg_resources import safe_name
 
 from six import string_types
 
@@ -139,7 +140,7 @@ class Spec(object):
         'preds', short for predicates, which are the famous (qualifier,
         version) tuples.
         """
-        self._name = re.sub(r"[-_.]+", "-", name).lower()
+        self._name = safe_name(name)
         self._preds = frozenset(preds if preds else [])
         self._source = source
         self._url = url
