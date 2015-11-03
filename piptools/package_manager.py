@@ -206,18 +206,37 @@ class PersistentCache(object):
             self._cache = {'__format__': 1}
 
     def write_cache(self):
-        """Writes (pickles) the cache to disk."""
+        """Writes (pickles) the cache to disk.
+
+        Omits packages which come from a URL or have a *.dev version number,
+        since dependencies of such versions may change without the URL or
+        version string changing.
+
+        """
         with open(self._cache_file, 'wb') as f:
-            pickle.dump(self._cache, f)
+            cache_specs = ((key, value) for key, value in self._cache.items()
+                           if key != '__format__')
+            cache_without_repos = {
+                (name, version, url): value
+                for (name, version, url), value in cache_specs
+                if url is None and not version.endswith('.dev')}
+            cache_without_repos['__format__'] = self._cache['__format__']
+            pickle.dump(cache_without_repos, f)
+
+    def _get_cache_key(self, spec):
+        assert len(spec._preds) == 1
+        qualifier, version = next(iter(spec._preds))
+        assert qualifier == '=='
+        return spec._name, version, spec._url
 
     def __contains__(self, item):
-        return item in self.cache
+        return self._get_cache_key(item) in self.cache
 
     def __getitem__(self, key):
-        return self.cache[key]
+        return self.cache[self._get_cache_key(key)]
 
     def __setitem__(self, key, value):
-        self.cache[key] = value
+        self.cache[self._get_cache_key(key)] = value
         self.write_cache()
 
     def get(self, key, default=None):
@@ -235,7 +254,7 @@ class PackageManager(BasePackageManager):
     download_cache_root = os.path.join(piptools_root, 'cache')
 
     def __init__(self, index_url=None, extra_index_urls=[], find_links=[],
-                 allow_all_prereleases=False):
+                 allow_all_prereleases=False, trusted_hosts=None):
         # TODO: provide options for pip, such as index URL or use-mirrors
         if index_url is None:
             index_url = 'https://pypi.python.org/simple/'
@@ -252,6 +271,7 @@ class PackageManager(BasePackageManager):
             self._index_urls.append(index_url)
         self._index_urls.extend(extra_index_urls)
         self._extra_index_urls = extra_index_urls
+        self._trusted_hosts = trusted_hosts
         try:
             # Try to pass/set retries with pip 1.6 (default: 0).
             self._session = PipSession(retries=3)
@@ -310,7 +330,8 @@ class PackageManager(BasePackageManager):
                     index_urls=self._index_urls,
                     allow_all_external=True,
                     session=self._session,
-                    allow_all_prereleases=self._allow_all_prereleases
+                    allow_all_prereleases=self._allow_all_prereleases,
+                    trusted_hosts=self._trusted_hosts,
                     # this parameter down not supported anymore
                     # all insecure package should be enumerated
                     # allow_all_insecure=True,
@@ -565,11 +586,13 @@ class PackageManager(BasePackageManager):
 
 class PinnedPackageManager(BasePackageManager):
     def __init__(self, pinned_contents, index_url=None, extra_index_urls=[],
-                 find_links=[], allow_all_prereleases=False):
+                 find_links=[], allow_all_prereleases=False,
+                 trusted_hosts=None):
         self.real_manager = PackageManager(index_url,
                                            extra_index_urls=extra_index_urls,
                                            find_links=find_links,
-                                           allow_all_prereleases=allow_all_prereleases)
+                                           allow_all_prereleases=allow_all_prereleases,
+                                           trusted_hosts=trusted_hosts)
         # self.pin_manager = FakePackageManager(pinned_contents)
         self.pins = pinned_contents
 

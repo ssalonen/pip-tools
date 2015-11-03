@@ -2,6 +2,7 @@ import sys
 
 from piptools.logging import logger
 from piptools.datastructures import SpecSet, Spec
+from piptools.package_manager import NoPackageMatch
 
 
 def print_specset(specset, round):
@@ -68,19 +69,33 @@ class Resolver(object):
         pkgmgr = self.pkgmgr
 
         deps = set()
+        not_in_pin_files = set()
         for spec in spec_set.normalize():
-            best_spec = pkgmgr.find_best_match(spec)
-            pkg_deps = pkgmgr.get_dependencies(best_spec)
-
-            # Append source information to the new specs
-            if spec.source:
-                source = '%s ~> %s==%s' % (spec.source, spec.name, best_spec.version)
+            try:
+                best_spec = pkgmgr.find_best_match(spec)
+            except KeyError:
+                if spec.source:
+                    not_in_pin_files.add('%s (from %s)' % (spec.name,
+                                                           spec.source))
+                else:
+                    not_in_pin_files.add(spec)
             else:
-                source = '%s==%s' % (spec.name, best_spec.version)
+                pkg_deps = pkgmgr.get_dependencies(best_spec)
 
-            pkg_deps = {s.add_source(source) for s in pkg_deps}
-            deps.update(pkg_deps)
+                # Append source information to the new specs
+                if spec.source:
+                    source = '%s ~> %s==%s' % (spec.source,
+                                               spec.name,
+                                               best_spec.version)
+                else:
+                    source = '%s==%s' % (spec.name, best_spec.version)
 
+                pkg_deps = {s.add_source(source) for s in pkg_deps}
+                deps.update(pkg_deps)
+
+        if not_in_pin_files:
+            raise NoPackageMatch('In the pin files, no packages found for %s'
+                                 % ', '.join(sorted(not_in_pin_files)))
         return deps
 
     def find_new_dependencies(self):
